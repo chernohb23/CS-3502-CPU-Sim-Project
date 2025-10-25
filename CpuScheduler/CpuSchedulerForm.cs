@@ -22,6 +22,10 @@ namespace CpuScheduler
         private const int MAX_PROCESS_COUNT = 100;
         private const int DEFAULT_PROCESS_COUNT = 3;
 
+        // Store the last displayed results and algorithm name so Export can use them
+        private List<SchedulingResult> lastResults = new List<SchedulingResult>();
+        private string lastAlgorithmName = string.Empty;
+
         /// <summary>
         /// Initializes a new instance of the <see cref="CpuSchedulerForm"/> class.
         /// </summary>
@@ -463,6 +467,143 @@ Instructions:
         }
 
         /// <summary>
+        /// STUDENTS: Shortest Remaining Time First implementation using DataGrid data
+        /// </summary>
+   
+        private List<SchedulingResult> RunSRTFAlgorithm(List<ProcessData> processes)
+        {
+            var results = new List<SchedulingResult>();
+            if (processes == null || processes.Count == 0)
+                return results;
+
+            int n = processes.Count;
+
+            // Remaining times and result entries per process
+            var remaining = processes.ToDictionary(p => p.ProcessID, p => p.BurstTime);
+            var resultMap = processes.ToDictionary(p => p.ProcessID, p => new SchedulingResult
+            {
+                ProcessID = p.ProcessID,
+                ArrivalTime = p.ArrivalTime,
+                BurstTime = p.BurstTime,
+                StartTime = -1,
+                FinishTime = 0,
+                WaitingTime = 0,
+                TurnaroundTime = 0
+            });
+
+            // Start at earliest arrival
+            var currentTime = processes.Min(p => p.ArrivalTime);
+            int completed = 0;
+
+            while (completed < n)
+            {
+                // Available processes that have arrived and still have remaining time
+                var available = processes
+                    .Where(p => p.ArrivalTime <= currentTime && remaining[p.ProcessID] > 0)
+                    .ToList();
+
+                if (available.Count == 0)
+                {
+                    // Jump to next arrival of an unfinished process
+                    var nextArrival = processes
+                        .Where(p => remaining[p.ProcessID] > 0)
+                        .Min(p => p.ArrivalTime);
+                    currentTime = Math.Max(currentTime + 1, nextArrival);
+                    continue;
+                }
+
+                // Select process with smallest remaining time (tie-breaker: earlier arrival, then ID)
+                var next = available
+                    .OrderBy(p => remaining[p.ProcessID])
+                    .ThenBy(p => p.ArrivalTime)
+                    .ThenBy(p => p.ProcessID)
+                    .First();
+
+                var res = resultMap[next.ProcessID];
+                if (res.StartTime == -1)
+                    res.StartTime = currentTime;
+
+                // Execute for 1 time unit (discrete simulation)
+                remaining[next.ProcessID] -= 1;
+                currentTime += 1;
+
+                if (remaining[next.ProcessID] == 0)
+                {
+                    // Process finished
+                    res.FinishTime = currentTime;
+                    res.TurnaroundTime = res.FinishTime - res.ArrivalTime;
+                    res.WaitingTime = res.TurnaroundTime - res.BurstTime;
+                    completed++;
+                }
+            }
+
+            results = resultMap.Values
+                .OrderBy(r => r.StartTime == -1 ? int.MaxValue : r.StartTime)
+                .ToList();
+
+            return results;
+        }
+
+        /// <summary>
+        /// STUDENTS: Highest Response Ratio Next implementation using DataGrid data
+        /// </summary>
+        private List<SchedulingResult> RunHRRNAlgorithm(List<ProcessData> processes)
+        {
+            var results = new List<SchedulingResult>();
+            if (processes == null || processes.Count == 0)
+                return results;
+
+            var remaining = processes.ToList();
+            var currentTime = remaining.Min(p => p.ArrivalTime);
+
+            while (remaining.Count > 0)
+            {
+                // Available processes that have arrived
+                var available = remaining.Where(p => p.ArrivalTime <= currentTime).ToList();
+
+                if (available.Count == 0)
+                {
+                    currentTime = remaining.Min(p => p.ArrivalTime);
+                    continue;
+                }
+
+                // Select process with highest response ratio: (waiting + service) / service
+                var selected = available
+                    .Select(p => new
+                    {
+                        Proc = p,
+                        Ratio = (double)(currentTime - p.ArrivalTime + p.BurstTime) / p.BurstTime
+                    })
+                    .OrderByDescending(x => x.Ratio)
+                    .ThenBy(x => x.Proc.ArrivalTime)
+                    .ThenBy(x => x.Proc.ProcessID)
+                    .First()
+                    .Proc;
+
+                var startTime = Math.Max(currentTime, selected.ArrivalTime);
+                var finishTime = startTime + selected.BurstTime;
+                var waitingTime = startTime - selected.ArrivalTime;
+                var turnaroundTime = finishTime - selected.ArrivalTime;
+
+                results.Add(new SchedulingResult
+                {
+                    ProcessID = selected.ProcessID,
+                    ArrivalTime = selected.ArrivalTime,
+                    BurstTime = selected.BurstTime,
+                    StartTime = startTime,
+                    FinishTime = finishTime,
+                    WaitingTime = waitingTime,
+                    TurnaroundTime = turnaroundTime
+                });
+
+                currentTime = finishTime;
+                remaining.Remove(selected);
+            }
+
+            return results.OrderBy(r => r.StartTime).ToList();
+        }
+
+        /// <summary>
         /// STUDENTS: Data structure for algorithm results
         /// Use this to store and display scheduling algorithm outcomes
         /// </summary>
@@ -483,6 +624,10 @@ Instructions:
         /// </summary>
         private void DisplaySchedulingResults(List<SchedulingResult> results, string algorithmName)
         {
+            // Save the last results so Export can write them to CSV
+            lastResults = results ?? new List<SchedulingResult>();
+            lastAlgorithmName = algorithmName ?? string.Empty;
+
             listView1.Clear();
             listView1.View = View.Details;
 
@@ -509,8 +654,8 @@ Instructions:
             }
             
             // Add summary statistics
-            var avgWaiting = results.Average(r => r.WaitingTime);
-            var avgTurnaround = results.Average(r => r.TurnaroundTime);
+            var avgWaiting = results.Any() ? results.Average(r => r.WaitingTime) : 0.0;
+            var avgTurnaround = results.Any() ? results.Average(r => r.TurnaroundTime) : 0.0;
             
             var summaryItem = new ListViewItem("SUMMARY");
             summaryItem.SubItems.Add(algorithmName);
@@ -521,21 +666,155 @@ Instructions:
             summaryItem.SubItems.Add("");
             listView1.Items.Add(summaryItem);
 
-            // TODO: STUDENTS - Add performance metrics calculation and display here
-            // Required metrics for your project report:
-            // 1. Average Waiting Time (AWT) - sum of all waiting times / number of processes
-            // 2. Average Turnaround Time (ATT) - sum of all turnaround times / number of processes  
-            // 3. CPU Utilization (%) - (total burst time / total time) * 100
-            // 4. Throughput (processes/second) - number of processes / total time
-            // 5. Response Time (RT) [Optional] - time from arrival to first execution
-            // Display these metrics in the results view for comparison between algorithms
+            // Add a blank spacer row to visually separate the SUMMARY from METRICS
+            var spacer = new ListViewItem("");
             
-            // TODO: STUDENTS - Add CSV export functionality for results data
-            // Create a "Export Results" button in the results panel to save:
-            // - Individual process results (what's shown in listView1)
-            // - Performance metrics summary for each algorithm tested
-            // Reference the SaveData_Click() method above to learn CSV file handling
-            // This will help you create tables/charts for your project report
+            // Add empty subitems for each remaining column so the spacer fills the row
+            for (int si = 0; si < Math.Max(0, listView1.Columns.Count - 1); si++)
+            {
+                spacer.SubItems.Add("");
+            }
+            listView1.Items.Add(spacer);
+
+            
+            // Performance metrics
+            if (results.Any())
+            {
+                // Compute total CPU burst time
+                var totalBurst = results.Sum(r => r.BurstTime);
+
+                // Compute simulation time window from earliest arrival to latest finish
+                var earliestArrival = results.Min(r => r.ArrivalTime);
+                var latestFinish = results.Max(r => r.FinishTime);
+                var totalTime = latestFinish - earliestArrival; // total elapsed time for the schedule
+
+                // Guard against zero total time to avoid divide-by-zero
+                double safeTotalTime = totalTime > 0 ? totalTime : 1; // if totalTime==0, treat as 1 time unit for rates
+
+                // CPU utilization (as a percentage)
+                var cpuUtilization = (double)totalBurst / safeTotalTime * 100.0;
+
+                // Throughput (processes per time unit)
+                var throughput = (double)results.Count / safeTotalTime;
+
+                // Add metrics rows to the ListView 
+                var metricsHeader = new ListViewItem("METRICS");
+                // Algorithm name is already shown in the SUMMARY row above so we leave this empty to avoid duplication
+                metricsHeader.SubItems.Add("");
+                // Fill remaining columns with blanks
+                for (int _i = 0; _i < 5; _i++) metricsHeader.SubItems.Add("");
+                listView1.Items.Add(metricsHeader);
+
+                var itemAWT = new ListViewItem("Average Waiting Time (AWT)");
+                // Put value in the column immediately to the right of the label
+                itemAWT.SubItems.Add($"{avgWaiting:F2}");
+                // Fill remaining columns with blanks
+                for (int _i = 0; _i < 5; _i++) itemAWT.SubItems.Add("");
+                listView1.Items.Add(itemAWT);
+
+                var itemATT = new ListViewItem("Average Turnaround Time (ATT)");
+                itemATT.SubItems.Add($"{avgTurnaround:F2}");
+                for (int _i = 0; _i < 5; _i++) itemATT.SubItems.Add("");
+                listView1.Items.Add(itemATT);
+
+                var itemCPU = new ListViewItem("CPU Utilization (%)"); 
+                itemCPU.SubItems.Add($"{cpuUtilization:F1}%");
+                for (int _i = 0; _i < 5; _i++) itemCPU.SubItems.Add("");
+                listView1.Items.Add(itemCPU);
+
+                var itemThroughput = new ListViewItem("Throughput (process/second)");
+                itemThroughput.SubItems.Add($"{throughput:F3}");
+                for (int _i = 0; _i < 5; _i++) itemThroughput.SubItems.Add("");
+                listView1.Items.Add(itemThroughput);
+             }
+
+            // Auto-size columns to fit content then enforce minimum widths so long labels are visible
+            try
+            {
+                listView1.AutoResizeColumns(ColumnHeaderAutoResizeStyle.ColumnContent);
+
+                int[] minWidths = new int[] { 220, 100, 100, 120, 100, 100, 140 };
+                for (int i = 0; i < listView1.Columns.Count && i < minWidths.Length; i++)
+                {
+                    if (listView1.Columns[i].Width < minWidths[i])
+                        listView1.Columns[i].Width = minWidths[i];
+                }
+            }
+            catch
+            {
+                // Nothing
+            }
+
+            // Enable/disable the Export button depending on whether we have results
+            if (this.btnExportResults != null)
+            {
+                btnExportResults.Enabled = lastResults.Any();
+            }
+        }
+
+        /// <summary>
+        /// Exports the last displayed results and metrics to CSV.
+        /// This is wired to "btnExportResults" in Designer.
+        /// </summary>
+        private void ExportResults_Click(object sender, EventArgs e)
+        {
+            if (lastResults == null || lastResults.Count == 0)
+            {
+                MessageBox.Show("There are no results to export.", "Export Results", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            
+            using (var saveDialog = new SaveFileDialog())
+            {
+                saveDialog.Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*";
+                saveDialog.DefaultExt = "csv";
+                saveDialog.FileName = "SchedulingResults.csv";
+                saveDialog.Title = "Export Scheduling Results";
+
+                if (saveDialog.ShowDialog() == DialogResult.OK)
+                {
+                    try
+                    {
+                        using (var writer = new System.IO.StreamWriter(saveDialog.FileName))
+                        {
+                            // Header for rows
+                            writer.WriteLine("Process ID,Arrival,Burst,Start,Finish,Waiting,Turnaround");
+
+                            // Write individual process rows
+                            foreach (var r in lastResults)
+                            {
+                                writer.WriteLine($"{r.ProcessID},{r.ArrivalTime},{r.BurstTime},{r.StartTime},{r.FinishTime},{r.WaitingTime},{r.TurnaroundTime}");
+                            }
+
+                            // Blank line then metrics summary
+                            writer.WriteLine();
+                            writer.WriteLine($"Algorithm:,{lastAlgorithmName}");
+
+                            // Compute metrics for export (same as displayed)
+                            var avgWait = lastResults.Average(r => r.WaitingTime);
+                            var avgTurn = lastResults.Average(r => r.TurnaroundTime);
+                            var totalBurst = lastResults.Sum(r => r.BurstTime);
+                            var earliest = lastResults.Min(r => r.ArrivalTime);
+                            var latest = lastResults.Max(r => r.FinishTime);
+                            var totalTime = latest - earliest;
+                            var safeTotalTime = totalTime > 0 ? totalTime : 1;
+                            var cpuUtil = (double)totalBurst / safeTotalTime * 100.0;
+                            var throughput = (double)lastResults.Count / safeTotalTime;
+
+                            writer.WriteLine($"Average Waiting Time (AWT),{avgWait:F2}");
+                            writer.WriteLine($"Average Turnaround Time (ATT),{avgTurn:F2}");
+                            writer.WriteLine($"CPU Utilization (%),{cpuUtil:F2}");
+                            writer.WriteLine($"Throughput (process/second),{throughput:F4}");
+                        }
+
+                        MessageBox.Show($"Results exported to:\n{saveDialog.FileName}", "Export Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Error exporting results: {ex.Message}", "Export Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -639,7 +918,6 @@ Instructions:
             cmbLoadExample.SelectedIndex = 0;
             txtProcess.Focus();
         }
-
         /// <summary>
         /// Loads example process scenarios.
         /// </summary>
@@ -690,7 +968,7 @@ Instructions:
             
             cmbLoadExample.SelectedIndex = 0; // Reset dropdown
         }
-
+        
         /// <summary>
         /// STUDENTS: Saves DataGrid data to CSV file for external editing or backup
         /// This allows you to prepare process data in Excel/CSV editors
@@ -948,7 +1226,49 @@ Instructions:
             cpuScheduler.ShowDialog();
         }
 
+        /// <summary>
+        /// Helper to apply dark theme styling to a sidebar button.
+        /// </summary>
+        private void ApplyDarkThemeToButton(Button button)
+        {
+            if (button == null) return;
+            button.BackColor = Color.FromArgb(37, 37, 38);
+            button.ForeColor = Color.FromArgb(241, 241, 241);
+            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(62, 62, 66);
+        }
 
+        /// <summary>
+        /// Helper to apply light theme styling to a sidebar button.
+        /// </summary>
+        private void ApplyLightThemeToButton(Button button)
+        {
+            if (button == null) return;
+            button.BackColor = SystemColors.InactiveBorder;
+            button.ForeColor = SystemColors.ControlText;
+            button.FlatAppearance.MouseOverBackColor = SystemColors.ButtonHighlight;
+        }
+
+        /// <summary>
+        /// Helper to apply dark theme styling to scheduler buttons (action buttons).
+        /// </summary>
+        private void ApplyDarkThemeToSchedulerButton(Button button)
+        {
+            if (button == null) return;
+            button.BackColor = Color.FromArgb(51, 51, 55);
+            button.ForeColor = Color.FromArgb(241, 241, 241);
+            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 122, 204);
+        }
+
+        /// <summary>
+        /// Helper to apply light theme styling to scheduler buttons (action buttons).
+        /// </summary>
+        private void ApplyLightThemeToSchedulerButton(Button button)
+        {
+            if (button == null) return;
+            button.BackColor = SystemColors.ButtonFace;
+            button.ForeColor = SystemColors.ControlText;
+            button.FlatAppearance.MouseOverBackColor = Color.PaleGreen;
+        }
 
         /// <summary>
         /// STUDENTS: Applies rounded corners to a button for modern UI appearance
@@ -1006,6 +1326,17 @@ Instructions:
             ApplyRoundedCorners(btnPriority);
             ApplyRoundedCorners(btnRoundRobin);
             ApplyRoundedCorners(btnDarkModeToggle);
+            ApplyRoundedCorners(btnSRTF);
+            ApplyRoundedCorners(btnHRRN);
+
+            // Makes sure that the Export button is visible and in front of the ListView
+            if (btnExportResults != null)
+            {
+                ApplyRoundedCorners(btnExportResults);
+                btnExportResults.Visible = true;
+                btnExportResults.Enabled = false; // Enabled only when results exist
+                btnExportResults.BringToFront();
+            }
             
             // Apply default dark theme
             ApplyTheme();
@@ -1126,6 +1457,16 @@ Instructions:
             ApplyDarkThemeToSchedulerButton(btnSJF);
             ApplyDarkThemeToSchedulerButton(btnPriority);
             ApplyDarkThemeToSchedulerButton(btnRoundRobin);
+            ApplyDarkThemeToSchedulerButton(btnSRTF);
+            ApplyDarkThemeToSchedulerButton(btnHRRN);
+
+            // Export button style for dark theme
+            if (btnExportResults != null)
+            {
+                btnExportResults.BackColor = Color.FromArgb(51, 51, 55);
+                btnExportResults.ForeColor = Color.FromArgb(241, 241, 241);
+                btnExportResults.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 122, 204);
+            }
         }
 
         /// <summary>
@@ -1200,52 +1541,23 @@ Instructions:
             btnSJF.BackColor = Color.AntiqueWhite;
             btnPriority.BackColor = Color.Bisque;
             btnRoundRobin.BackColor = Color.PapayaWhip;
-            
+            btnSRTF.BackColor = Color.LavenderBlush;
+            btnHRRN.BackColor = Color.LavenderBlush;
+
             // Reset text color for algorithm buttons
             btnFCFS.ForeColor = SystemColors.ControlText;
             btnSJF.ForeColor = SystemColors.ControlText;
             btnPriority.ForeColor = SystemColors.ControlText;
             btnRoundRobin.ForeColor = SystemColors.ControlText;
-        }
+            btnSRTF.ForeColor = SystemColors.ControlText;
+            btnHRRN.ForeColor = SystemColors.ControlText;
 
-        /// <summary>
-        /// STUDENTS: Helper method to apply dark theme to sidebar buttons
-        /// </summary>
-        private void ApplyDarkThemeToButton(Button button)
-        {
-            button.BackColor = Color.FromArgb(37, 37, 38);
-            button.ForeColor = Color.FromArgb(241, 241, 241);
-            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(62, 62, 66);
-        }
-
-        /// <summary>
-        /// STUDENTS: Helper method to apply light theme to sidebar buttons
-        /// </summary>
-        private void ApplyLightThemeToButton(Button button)
-        {
-            button.BackColor = SystemColors.InactiveBorder;
-            button.ForeColor = SystemColors.ControlText;
-            button.FlatAppearance.MouseOverBackColor = SystemColors.ButtonHighlight;
-        }
-
-        /// <summary>
-        /// STUDENTS: Helper method to apply dark theme to scheduler buttons
-        /// </summary>
-        private void ApplyDarkThemeToSchedulerButton(Button button)
-        {
-            button.BackColor = Color.FromArgb(51, 51, 55);
-            button.ForeColor = Color.FromArgb(241, 241, 241);
-            button.FlatAppearance.MouseOverBackColor = Color.FromArgb(0, 122, 204);
-        }
-
-        /// <summary>
-        /// STUDENTS: Helper method to apply light theme to scheduler buttons
-        /// </summary>
-        private void ApplyLightThemeToSchedulerButton(Button button)
-        {
-            button.BackColor = SystemColors.ButtonFace;
-            button.ForeColor = SystemColors.ControlText;
-            button.FlatAppearance.MouseOverBackColor = Color.PaleGreen;
+            // Export button style for light theme
+            if (btnExportResults != null)
+            {
+                btnExportResults.BackColor = SystemColors.ButtonFace;
+                btnExportResults.ForeColor = SystemColors.ControlText;
+            }
         }
 
 
@@ -1293,6 +1605,59 @@ Instructions:
             }
         }
 
+        /// <summary>
+        /// Executes the Shortest Remaining Time First algorithm using DataGrid data.
+        /// <summary>
+        private void SRTFButton_Click(object sender, EventArgs e)
+        {
+            var processData = GetProcessDataFromGrid();
+            if (processData.Count > 0)
+            {
+                // Run SRTF (Shortest Remaining Time First) using grid data
+                var results = RunSRTFAlgorithm(processData);
+
+                // Update Results tab with detailed scheduling results
+                DisplaySchedulingResults(results, "SRTF - Shortest Remaining Time First");
+
+                // Switch to Results panel and update sidebar
+                ShowPanel(resultsPanel);
+                sidePanel.Height = btnDashBoard.Height;
+                sidePanel.Top = btnDashBoard.Top;
+            }
+            else
+            {
+                MessageBox.Show("Please set process count and ensure the data grid has process data.",
+                    "No Process Data", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtProcess.Focus();
+            }
+        }
+
+        /// <summary>
+        /// Executes the Highest Response Ratio Next algorithm using DataGrid data.
+        /// <summary>
+        private void HighestResponseRatioNextButton_Click(object sender, EventArgs e)
+        {
+            var processData = GetProcessDataFromGrid();
+            if (processData.Count > 0)
+            {
+                // Run HRRN (Highest Response Ratio Next) using grid data
+                var results = RunHRRNAlgorithm(processData);
+
+                // Update Results tab with detailed scheduling results
+                DisplaySchedulingResults(results, "HRRN - Highest Response Ratio Next");
+
+                // Switch to Results panel and update sidebar
+                ShowPanel(resultsPanel);
+                sidePanel.Height = btnDashBoard.Height;
+                sidePanel.Top = btnDashBoard.Top;
+            }
+            else
+            {
+                MessageBox.Show("Please set process count and ensure the data grid has process data.",
+                    "No Process Data", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtProcess.Focus();
+            }
+        }
 
     }
 

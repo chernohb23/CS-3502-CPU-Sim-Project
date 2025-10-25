@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Windows.Forms;
 
 namespace CpuScheduler
@@ -322,7 +323,7 @@ namespace CpuScheduler
                 MessageBox.Show("Invalid number of processes", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            int index, counter = 0;
+            int index, counter = 0; 
             double total;
             double timeQuantum;
             double waitTime = 0, turnaroundTime = 0;
@@ -422,6 +423,7 @@ namespace CpuScheduler
 
         // TODO: Add new scheduling algorithms below. Use the above methods as
         // examples when expanding functionality.
+    
     }
 }
 
