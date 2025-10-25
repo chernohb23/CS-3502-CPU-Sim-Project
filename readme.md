@@ -1,21 +1,30 @@
-# CPU-Simulator using Windows Forms
+# CPU-Simulator with Extended Functionality
 
-This project provides a Windows Forms application that demonstrates common CPU scheduling algorithms through an interactive graphical interface. Each algorithm prompts for basic input and displays the resulting waiting or turnaround times using message boxes and on-screen tables.
+This project provides a Windows Forms application that demonstrates common CPU scheduling algorithms through an interactive graphical interface. Each algorithm prompts for basic input and displays the resulting waiting or turnaround times using message boxes and on-screen tables. The simulator now includes additional algorithms, performance metrics, and export functionality to CSV.
 
-**Fork maintained by Chris Regan** - Original creator: Francis (used with permission)
+**Fork maintained by Chernoh Bah** – based on original starter repo by Chris Regan and Francis (used with permission).
 
 ## Project status
 
-The simulator is functional but still a work in progress. Currently the following scheduling strategies are available:
+The simulator is functional but still a work in progress. The following scheduling strategies are currently available:
 
-| Algorithm | Method | Notes |
-|-----------|--------|-------|
-| First Come First Serve | `Algorithms.RunFirstComeFirstServe` | Processes are executed in order of arrival. |
-| Shortest Job First | `Algorithms.RunShortestJobFirst` | Jobs are sorted by burst time before execution. |
-| Priority Scheduling | `Algorithms.RunPriorityScheduling` | User supplies a priority value for each job. |
-| Round Robin | `Algorithms.RunRoundRobin` | Requires a quantum time parameter. |
+| Algorithm | Method | Notes                                                                |
+|-----------|--------|----------------------------------------------------------------------|
+| First Come First Serve | `Algorithms.RunFirstComeFirstServe` | Processes are executed in order of arrival.                          |
+| Shortest Job First | `Algorithms.RunShortestJobFirst` | Jobs are sorted by burst time before execution.                      |
+| Priority Scheduling | `Algorithms.RunPriorityScheduling` | User supplies a priority value for each job.                         |
+| Round Robin | `Algorithms.RunRoundRobin` | Requires a quantum time parameter.                                   |
+| Shortest Remaining Time First | `CpuSchedulerForm.RunSRTFAlgorithm` | Preemptive variant of SJF; runs job with least remaining burst time. |
+| Highest Response Ratio Next | `CpuSchedulerForm.RunHRRNAlgorithm` | Runs job with highest response ratio.                                |
 
-Additional algorithms can easily be added by extending `Algorithms.cs`.
+Additional metrics are calculated and displayed automatically:
+
+- Average Waiting Time (AWT)
+- Average Turnaround Time (ATT)
+- CPU Utilization
+- Throughput
+
+Results can also be exported to CSV for further analysis.
 
 ## Requirements
 
@@ -49,9 +58,9 @@ Additional algorithms can easily be added by extending `Algorithms.cs`.
 3. Open the project folder in VS Code
 
 4. **Option A - Using the Debugger (Recommended):**
-   - Press **F5** or go to Run & Debug panel
-   - Select ".NET Core Launch (console)" configuration
-   - This will build and launch the Windows Forms app with debugging support
+    - Press **F5** or go to Run & Debug panel
+    - Select ".NET Core Launch (console)" configuration
+    - This will build and launch the Windows Forms app with debugging support
 
 5. **Option B - Using Terminal (May have termination issues):**
 
@@ -87,7 +96,8 @@ dotnet run --project CpuScheduler/CpuScheduler.csproj
 1. Enter the desired number of processes
 2. Choose a scheduling algorithm from the interface
 3. The app will prompt for additional values as needed (burst time, priority, quantum time, etc.)
-4. View the results in the display table showing waiting times and turnaround times
+4. View results in the display table, including waiting times, turnaround times, and metrics
+5. Use the **Export Results** button to save data to CSV
 
 ### License
 
